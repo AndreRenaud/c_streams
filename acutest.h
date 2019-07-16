@@ -1513,7 +1513,6 @@ main(int argc, char** argv)
 
     if (test_xml_output__) {
         fprintf(test_xml_output__, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        fprintf(test_xml_output__, "<testsuites>\n");
         fprintf(test_xml_output__, "<testsuite name=\"acutest\" tests=\"%d\" errors=\"%d\" failures=\"%d\" skip=\"%d\">\n",
             (int)test_list_size__, test_stat_failed_units__, test_stat_failed_units__,
             (int)test_list_size__ - test_stat_run_units__);
@@ -1527,7 +1526,6 @@ main(int argc, char** argv)
             fprintf(test_xml_output__, "  </testcase>\n");
         }
         fprintf(test_xml_output__, "</testsuite>\n");
-        fprintf(test_xml_output__, "</testsuites>\n");
         fclose(test_xml_output__);
     }
 
