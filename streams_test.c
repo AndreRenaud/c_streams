@@ -121,8 +121,10 @@ void test_condition(void)
 void test_line_reader(void)
 {
 	char input_data[] = "line 1\n"
-						"line 2\n";
-	char buffer[1024];
+						"line 2\r\n"
+						"\n"
+						"line 4\n";
+	char buffer[80];
 	struct stream *input;
 	struct stream *line;
 
@@ -132,14 +134,24 @@ void test_line_reader(void)
 	line = stream_line_open(input);
 	TEST_CHECK(line != NULL);
 
-	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) >= 0);
-	printf("Got first line '%s'\n", buffer);
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 6);
 	TEST_CHECK(strcmp(buffer, "line 1") == 0);
-	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) >= 0);
-	printf("Got second line '%s'\n", buffer);
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 6);
 	TEST_CHECK(strcmp(buffer, "line 2") == 0);
 
+	/* Data should still be available */
+	TEST_CHECK(stream_available(line, NULL, NULL) == 1);
+
+	/* Absorb the blank line */
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 0);
+
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 6);
+	TEST_CHECK(strcmp(buffer, "line 4") == 0);
+
+	/* The nul byte is considered an empty line */
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 0);
 	TEST_CHECK(stream_available(line, NULL, NULL) == 0);
+
 	stream_close(line);
 	stream_close(input);
 }

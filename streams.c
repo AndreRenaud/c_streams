@@ -336,9 +336,15 @@ static struct line_stream *stream_to_line(struct stream *stream)
 	return (struct line_stream *)(stream + 1);
 }
 
+static bool is_linebreak(char ch)
+{
+	return (ch == '\r' || ch == '\n' || ch == '\0');
+}
+
 static int line_read(struct stream *stream, void *result, int max_size)
 {
 	struct line_stream *line = stream_to_line(stream);
+	int line_len = 0;
 
 	/* If we don't have a line break, then read more data */
 	if (line->break_pos == -1) {
@@ -348,7 +354,7 @@ static int line_read(struct stream *stream, void *result, int max_size)
 		line->pos += e;
 
 		for (int i = 0; i < line->pos; i++) {
-			if (line->buffer[i] == '\n') {
+			if (is_linebreak(line->buffer[i])) {
 				line->break_pos = i;
 				break;
 			}
@@ -356,29 +362,33 @@ static int line_read(struct stream *stream, void *result, int max_size)
 	}
 
 	if (line->break_pos >= 0) {
-		int line_len = line->break_pos;
-		uint8_t *r8 = result;
+		line_len = line->break_pos;
+		char *r_ch = result;
 		if (line_len > max_size - 1)
 			line_len = max_size - 1;
 		memcpy(result, line->buffer, line_len);
-		r8[line_len] = '\0';
+		r_ch[line_len] = '\0';
+
+		/* Absorb '\r\n' as one item */
+		if (line->buffer[line->break_pos] == '\r' && 
+			line->break_pos + 1 < line->pos && 
+			line->buffer[line->break_pos + 1] == '\n')
+			line->break_pos++;
 		memcpy(line->buffer, &line->buffer[line->break_pos + 1], line->pos - line->break_pos - 1);
+		line->pos -= line->break_pos + 1;
 		line->break_pos = -1;
 
 		for (int i = 0; i < line->pos; i++) {
-			if (line->buffer[i] == '\n') {
+			if (is_linebreak(line->buffer[i])) {
 				line->break_pos = i;
 				break;
 			}
 		}
-
-		printf("Line break pos moved on to %d pos=%d\n", line->break_pos, line->pos);
 	}
-
 
 	stream_notify(stream);
 
-	return max_size;
+	return line_len;
 }
 
 static int line_available(struct stream *stream, int *read, int *write)
@@ -386,6 +396,8 @@ static int line_available(struct stream *stream, int *read, int *write)
 	struct line_stream *line = stream_to_line(stream);
 	if (read) *read = line->break_pos != -1;
 	if (write) *write = 0;
+	if (line->pos > 0)
+		return 1;
 	return stream_available(line->parent, NULL, NULL);
 }
 
