@@ -13,7 +13,7 @@ static void rand_data(void *buffer, int size)
 void test_mem(void)
 {
 	uint8_t input[1024];
-	uint8_t output[1024];
+	uint8_t output[2048]; // Make it bigger to make sure we don't over-read input
 
 	rand_data(input, sizeof(input));
 
@@ -54,6 +54,11 @@ void test_file(void)
 
 	TEST_CHECK(memcmp(input, output, sizeof(input)) == 0);
 }
+
+//void test_rand(void)
+//{
+//	struct stream *r = stream_rand_open(1024);
+//}
 
 TEST_LIST = {
     { "mem", test_mem },

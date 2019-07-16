@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <pthread.h>
 
 struct stream;
 
@@ -15,8 +16,13 @@ struct stream;
 struct stream *stream_file_open(const char *file_name, const char *mode);
 struct stream *stream_mem_open(void *memory_area, size_t memory_len, const char *mode);
 struct stream *stream_url_open(const char *url, const char *mode);
+struct stream *stream_rand_open(int max_len);
 
-int stream_tee(struct stream *input, struct stream **output1, struct stream **output2);
+/**
+ * Untriggers the 'cond' function whenever the stream has data available
+ * TODO: Distinguish between read/write availability?
+ */
+int stream_set_notify(struct stream *stream, pthread_cond_t *cond);
 
 /**
  * read callback will read up to max_size bytes into the 'result' buffer

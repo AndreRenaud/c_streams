@@ -1,8 +1,9 @@
-CFLAGS=-g -Wall -pipe -O3
+CFLAGS=-g -Wall -Wextra -pipe -O3
 
 default: test
 
 %.o: %.c streams.h
+	cppcheck --quiet $<
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 test: streams_test
