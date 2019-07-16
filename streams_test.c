@@ -158,20 +158,40 @@ void test_line_reader(void)
 
 void test_process(void)
 {
-	struct stream *p;
 	char buffer[1024];
+	char *args[] = {"printf", "foo\\nblah\\n", NULL};
 
-	p = stream_process_open("printf \"foo\\nblah\\n\"");
-	TEST_CHECK(p != NULL);
+	struct stream *proc = stream_process_open(args);
+	TEST_CHECK(proc != NULL);
 
-	struct stream *line = stream_line_open(p);
+	struct stream *line = stream_line_open(proc);
 	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 3);
 	TEST_CHECK(strcmp(buffer, "foo") == 0);
 	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 4);
 	TEST_CHECK(strcmp(buffer, "blah") == 0);
 
 	stream_close(line);
-	stream_close(p);
+	stream_close(proc);
+}
+
+void test_process_interactive(void)
+{
+	char buffer[1024];
+	char *args[] = {"sh", "-c", "read foo ; echo -${foo}-", NULL};
+	struct stream *proc = stream_process_open(args);
+	TEST_CHECK(proc != NULL);
+
+	struct stream *line = stream_line_open(proc);
+	stream_write(proc, "wibble\n", 7);
+	/* Read back the echo */
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 6);
+	TEST_CHECK(strcmp(buffer, "wibble") == 0);
+	/* Read back the modified response */
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 8);
+	TEST_CHECK(strcmp(buffer, "-wibble-") == 0);
+
+	stream_close(line);
+	stream_close(proc);	
 }
 
 void test_tcp(void)
@@ -201,6 +221,7 @@ TEST_LIST = {
     {"condition", test_condition},
     {"line", test_line_reader},
     {"process", test_process},
+    {"process_interactive", test_process_interactive},
     {"tcp", test_tcp},
     { NULL, NULL }
 };

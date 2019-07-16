@@ -2,7 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <util.h>
 #include <stdbool.h>
+#include <signal.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <sys/select.h>
@@ -437,38 +439,75 @@ struct stream *stream_line_open(struct stream *input)
 	return stream;
 }
 
+struct process_stream {
+	pid_t pid;
+	int fd;
+};
+
+struct process_stream *stream_to_process(struct stream *stream)
+{
+	return (struct process_stream *)(stream + 1);
+}
+
+static int process_read(struct stream *stream, void *result, int max_size)
+{
+	struct process_stream *process = stream_to_process(stream);
+	int ret = read(process->fd, result, max_size);
+	if (ret < 0)
+		return -errno;
+	check_notify_fd(stream, process->fd);
+	return ret;
+}
+
+static int process_write(struct stream *stream, const void * const data, const int data_len)
+{
+	struct process_stream *process = stream_to_process(stream);
+	int ret = write(process->fd, data, data_len);
+	if (ret < 0)
+		return -errno;
+	check_notify_fd(stream, process->fd);
+	return ret;
+}
+
 static int process_close(struct stream *stream)
 {
-	FILE *fp = stream_to_file(stream);
-	if (pclose(fp) < 0)
-		return -errno;
+	struct process_stream *process = stream_to_process(stream);
+	kill(process->pid, SIGTERM);
+	sleep(2);
+	kill(process->pid, SIGKILL);
+	waitpid(process->pid, NULL, 0);
+	close(process->fd);
 	return 0;
 }
 
-struct stream *stream_process_open(const char *command, ...)
+struct stream *stream_process_open(char * const *args)
 {
-	char buffer[1024];
-	va_list ap;
+	pid_t pid;
+	int fd;
 
-	va_start(ap, command);
-	vsnprintf(buffer, sizeof(buffer), command, ap);
-	va_end(ap);
+	pid = forkpty(&fd, NULL, NULL, NULL);
 
-	// TODO(andre): This should be forkpty + execve so it can be bidirectional
-	FILE *fp = popen(buffer, "r");
-	if (!fp) {
+	if (pid < 0) {
 		return NULL;
-	}
-	struct stream *stream = calloc(sizeof(struct stream) + sizeof(FILE **), 1);
+	} else if (pid == 0) {
+		// This is the child process
+        execvp(args[0], args);
+        return NULL;
+    } 
+
+	struct stream *stream = calloc(sizeof(struct stream) + sizeof(struct process_stream), 1);
 	if (!stream) {
-		pclose(fp);
+		close(fd);
+		kill(pid, SIGKILL);
 		return NULL;
 	}
-	*(FILE **)(stream + 1) = fp;
-	stream->write = NULL;
-	stream->read = file_read;
+	struct process_stream *process = stream_to_process(stream);
+	process->pid = pid;
+	process->fd = fd;
+	stream->write = process_write;
+	stream->read = process_read;
 	stream->close = process_close;
-	stream->available = NULL;
+	stream->available = NULL; // TODO: Implement available + notify
 	return stream;
 }
 
