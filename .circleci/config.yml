@@ -1,0 +1,13 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: alpine:latest
+    steps:
+      - checkout
+      - run:
+          name: Setup tools
+          command: apk update && apk install gcc make cppcheck
+      - run:
+          name: Build & test
+          command: make test
