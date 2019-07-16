@@ -19,6 +19,11 @@ struct stream *stream_url_open(const char *url, const char *mode);
 struct stream *stream_rand_open(int max_len);
 
 /**
+ * Open a command and read/write from it
+ */
+struct stream *stream_process_open(const char *command, ...);
+
+/**
  * Create a stream which sends data from writes out to reads
  */
 struct stream *stream_pipe_open(int buffer_size);

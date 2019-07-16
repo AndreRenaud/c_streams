@@ -156,10 +156,29 @@ void test_line_reader(void)
 	stream_close(input);
 }
 
+void test_process(void)
+{
+	struct stream *p;
+	char buffer[1024];
+
+	p = stream_process_open("printf \"foo\\nblah\\n\"");
+	TEST_CHECK(p != NULL);
+
+	struct stream *line = stream_line_open(p);
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 3);
+	TEST_CHECK(strcmp(buffer, "foo") == 0);
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 4);
+	TEST_CHECK(strcmp(buffer, "blah") == 0);
+
+	stream_close(line);
+	stream_close(p);
+}
+
 TEST_LIST = {
     {"mem", test_mem},
     {"file", test_file},
     {"condition", test_condition},
     {"line", test_line_reader},
+    {"process", test_process},
     { NULL, NULL }
 };

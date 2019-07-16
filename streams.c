@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <sys/select.h>
 
 #include "streams.h"
@@ -426,6 +427,41 @@ struct stream *stream_line_open(struct stream *input)
 
 	stream_set_notify(line->parent, stream_chain_notify, stream);
 
+	return stream;
+}
+
+static int process_close(struct stream *stream)
+{
+	FILE *fp = stream_to_file(stream);
+	if (pclose(fp) < 0)
+		return -errno;
+	return 0;
+}
+
+struct stream *stream_process_open(const char *command, ...)
+{
+	char buffer[1024];
+	va_list ap;
+
+	va_start(ap, command);
+	vsnprintf(buffer, sizeof(buffer), command, ap);
+	va_end(ap);
+
+	// TODO(andre): This should be forkpty + execve so it can be bidirectional
+	FILE *fp = popen(buffer, "r");
+	if (!fp) {
+		return NULL;
+	}
+	struct stream *stream = calloc(sizeof(struct stream) + sizeof(FILE **), 1);
+	if (!stream) {
+		pclose(fp);
+		return NULL;
+	}
+	*(FILE **)(stream + 1) = fp;
+	stream->write = NULL;
+	stream->read = file_read;
+	stream->close = process_close;
+	stream->available = NULL;
 	return stream;
 }
 
