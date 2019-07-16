@@ -7,7 +7,7 @@ jobs:
       - checkout
       - run:
           name: Setup tools
-          command: apk update && apk install gcc make cppcheck
+          command: apk update && apk add gcc make cppcheck
       - run:
           name: Build & test
           command: make test
