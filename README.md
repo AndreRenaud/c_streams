@@ -11,6 +11,13 @@ features:
 
 This is heavily influenced by Go's io.Reader & io.Writer interfaces
 
+Streams are currently implemented of the following types:
+* Local files
+* Memory - Open a chunk of memory as a stream
+* Simple TCP clients
+* Processes (read/write stdout/stdin)
+* Line buffers - converts any other character-wise stream into a line-wise stream
+
 Example usage
 =============
 
