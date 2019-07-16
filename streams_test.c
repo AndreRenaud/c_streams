@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <pthread.h>
 
 #include "acutest.h"
 #include "streams.h"
@@ -55,13 +56,71 @@ void test_file(void)
 	TEST_CHECK(memcmp(input, output, sizeof(input)) == 0);
 }
 
-//void test_rand(void)
-//{
-//	struct stream *r = stream_rand_open(1024);
-//}
+struct thread_data {
+	struct stream *stream;
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+};
+
+static void notify_unlock(void *data, struct stream *stream)
+{
+	struct thread_data *l = data;
+
+	(void)stream;
+
+	pthread_mutex_lock(&l->mutex);
+	pthread_cond_broadcast(&l->cond);
+	pthread_mutex_unlock(&l->mutex);
+}
+
+/* Thread function that blocks waiting for data to be available */
+static void *read_thread(void *data)
+{
+	struct thread_data *l = data;
+	int read_available = 0;
+	char buffer[8];
+
+	pthread_mutex_lock(&l->mutex);
+    while (stream_available(l->stream, &read_available, NULL), read_available <= 0) {
+        pthread_cond_wait(&l->cond, &l->mutex);
+    }
+    pthread_mutex_unlock(&l->mutex);
+   	int e = stream_read(l->stream, buffer, 4);
+	if (e != 4) {
+		return (void *)1;
+	}
+	if (strcmp(buffer, "foo") != 0) {
+		return (void *)1;
+	}
+	return NULL;
+}
+
+void test_condition(void)
+{
+	struct thread_data l = {
+		NULL,
+		PTHREAD_MUTEX_INITIALIZER,
+		PTHREAD_COND_INITIALIZER,
+	};
+	l.stream = stream_pipe_open(1024);
+	pthread_t thread;
+	void *retval = NULL;
+
+	TEST_CHECK(l.stream != NULL);
+	TEST_CHECK(stream_set_notify(l.stream, notify_unlock, &l) >= 0);
+	TEST_CHECK(pthread_create(&thread, NULL, read_thread, &l) >= 0);
+
+	sleep(1); // Give the thread time to get blocking
+	TEST_CHECK(stream_write(l.stream, "foo", 4) == 4);
+
+	TEST_CHECK(pthread_join(thread, &retval) >= 0);
+	TEST_CHECK(retval == NULL);
+	TEST_CHECK(stream_close(l.stream) >= 0);
+}
 
 TEST_LIST = {
-    { "mem", test_mem },
-    { "file", test_file },
+    {"mem", test_mem},
+    {"file", test_file},
+    {"condition", test_condition},
     { NULL, NULL }
 };

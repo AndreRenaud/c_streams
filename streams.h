@@ -19,22 +19,28 @@ struct stream *stream_url_open(const char *url, const char *mode);
 struct stream *stream_rand_open(int max_len);
 
 /**
- * Untriggers the 'cond' function whenever the stream has data available
+ * Create a stream which sends data from writes out to reads
+ */
+struct stream *stream_pipe_open(int buffer_size);
+
+/**
+ * Sets a callback function + userdata to be called whenever this stream
+ * has data availe for either read or write (use stream_available to check which) 
  * TODO: Distinguish between read/write availability?
  */
-int stream_set_notify(struct stream *stream, pthread_cond_t *cond);
+int stream_set_notify(struct stream *stream, void (*)(void *data, struct stream *stream), void *data);
 
 /**
  * read callback will read up to max_size bytes into the 'result' buffer
  * @return < 0 on failure, number of bytes written to result on success
  */
-int stream_read(struct stream *stream, uint8_t *result, const int max_size);
+int stream_read(struct stream *stream, void *result, const int max_size);
 
 /**
  * write data up to 'data_len' bytes from the 'data' pointer.
  * @return < 0 on failure, number of bytes written to result on success
  */
-int stream_write(struct stream *stream, const uint8_t * const data, const int data_len);
+int stream_write(struct stream *stream, const void * const data, const int data_len);
 
 /**
  * Close the metadata associated with thes streaming functions

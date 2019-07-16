@@ -8,36 +8,30 @@
 #include "streams.h"
 
 struct stream {
-	int (*read)(struct stream *stream, uint8_t *result, const int max_size);
-	int (*write)(struct stream *stream, const uint8_t * const data, const int data_len);
+	int (*read)(struct stream *stream, void *result, const int max_size);
+	int (*write)(struct stream *stream, const void * const data, const int data_len);
 	int (*available)(struct stream *stream, int *read, int *write);
 	int (*close)(struct stream *stream);
 
-	pthread_cond_t *cond;
+	void (*notify)(void *data, struct stream *stream);
+	void *notify_data;
 };
 
-static inline void check_cond_fd(int fd, pthread_cond_t *cond)
-{
-	if (!cond)
-		return;
-	fd_set rfds;
-	fd_set wfds;
-	FD_ZERO(&rfds);
-	FD_ZERO(&wfds);
-	FD_SET(fd, &rfds);
-	FD_SET(fd, &wfds);
 
-	if (select(fd + 1, &rfds, &wfds, NULL, NULL) > 0)
-		pthread_cond_broadcast(cond);
-}
-
-int stream_set_notify(struct stream *stream, pthread_cond_t *cond)
+int stream_set_notify(struct stream *stream, void (*notify)(void *data, struct stream *stream), void *data)
 {
-	stream->cond = cond;
+	stream->notify = notify;
+	stream->notify_data = data;
 	return 0;
 }
 
-int stream_read(struct stream *stream, uint8_t *result, const int max_size)
+static inline void stream_notify(struct stream *stream)
+{
+	if (stream->notify)
+		stream->notify(stream->notify_data, stream);
+}
+
+int stream_read(struct stream *stream, void *result, const int max_size)
 {
 	if (!stream)
 		return -EINVAL;
@@ -46,7 +40,7 @@ int stream_read(struct stream *stream, uint8_t *result, const int max_size)
 	return stream->read(stream, result, max_size);
 }
 
-int stream_write(struct stream *stream, const uint8_t * const data, const int data_len)
+int stream_write(struct stream *stream, const void * const data, const int data_len)
 {
 	if (!stream)
 		return -EINVAL;
@@ -70,8 +64,12 @@ int stream_available(struct stream *stream, int *read, int *write)
 {
 	if (!stream)
 		return -EINVAL;
-	if (!stream->available)
-		return -ENOTSUP;
+	if (!stream->available) {
+		/* For streams that don't support it, just assume they're always available */
+		if (read) *read = stream->read ? 1 : 0;
+		if (write) *write = stream->write ? 1 : 0;
+		return 1;
+	}
 	return stream->available(stream, read, write);
 }
 
@@ -86,7 +84,7 @@ static struct mem_stream *stream_to_mem(struct stream *stream)
 	return (struct mem_stream *)(stream + 1);
 }
 
-static int mem_read(struct stream *stream, uint8_t *result, const int max_size)
+static int mem_read(struct stream *stream, void *result, const int max_size)
 {
 	struct mem_stream *mem = stream_to_mem(stream);
 	int size = max_size;
@@ -101,13 +99,13 @@ static int mem_read(struct stream *stream, uint8_t *result, const int max_size)
 	memmove(result, mem->base + mem->pos, size);
 	mem->pos += size;
 
-	if (stream->cond && mem->pos < mem->len)
-		pthread_cond_broadcast(stream->cond);
+	if (mem->pos < mem->len)
+		stream_notify(stream);
 
 	return size;
 }
 
-static int mem_write(struct stream *stream, const uint8_t * const data, const int data_len)
+static int mem_write(struct stream *stream, const void * const data, const int data_len)
 {
 	struct mem_stream *mem = stream_to_mem(stream);
 	int size = data_len;
@@ -122,8 +120,8 @@ static int mem_write(struct stream *stream, const uint8_t * const data, const in
 	memmove(mem->base + mem->pos, data, size);
 	mem->pos += size;
 
-	if (stream->cond && mem->pos < mem->len)
-		pthread_cond_broadcast(stream->cond);
+	if (mem->pos < mem->len)
+		stream_notify(stream);
 
 	return size;
 }
@@ -158,24 +156,39 @@ static inline FILE *stream_to_file(struct stream *stream)
 	return *(FILE **)(stream + 1);
 }
 
-static int file_read(struct stream *stream, uint8_t *result, const int max_size)
+static inline void check_cond_fd(struct stream *stream, int fd)
+{
+	if (!stream->notify)
+		return;
+	fd_set rfds;
+	fd_set wfds;
+	FD_ZERO(&rfds);
+	FD_ZERO(&wfds);
+	FD_SET(fd, &rfds);
+	FD_SET(fd, &wfds);
+
+	if (select(fd + 1, &rfds, &wfds, NULL, NULL) > 0)
+		stream_notify(stream);
+}
+
+static int file_read(struct stream *stream, void *result, const int max_size)
 {
 	FILE *fp = stream_to_file(stream);
 	int e = fread(result, 1, max_size, fp);
 	if (e < 0)
 		return -errno;
-	check_cond_fd(fileno(fp), stream->cond);
+	check_cond_fd(stream, fileno(fp));
 	return e;
 }
 
-static int file_write(struct stream *stream, const uint8_t * const data, const int data_len)
+static int file_write(struct stream *stream, const void * const data, const int data_len)
 {
 	FILE *fp = stream_to_file(stream);
 	int e = fwrite(data, 1, data_len, fp);
 	if (e < 0)
 		return -errno;
 
-	check_cond_fd(fileno(fp), stream->cond);
+	check_cond_fd(stream, fileno(fp));
 	return e;
 }
 
@@ -213,17 +226,17 @@ static inline struct rand_stream *stream_to_rand(struct stream *stream)
 	return (struct rand_stream *)(stream + 1);
 }
 
-static int rand_read(struct stream *stream, uint8_t *result, int max_size)
+static int rand_read(struct stream *stream, void *result, int max_size)
 {
 	struct rand_stream *rs = stream_to_rand(stream);
+	uint8_t *r8 = result;
 
 	if (rs->max_len >= 0 && max_size > rs->max_len - rs->pos)
 		max_size = rs->max_len - rs->pos;
 	for (int i = 0; i < max_size; i++)
-		*result++ = rand();
+		*r8++ = rand();
 	rs->pos += max_size;
-	if (stream->cond)
-		pthread_cond_broadcast(stream->cond);
+	stream_notify(stream);
 	return max_size;
 }
 
@@ -232,12 +245,79 @@ struct stream *stream_rand_open(int max_len)
 	struct stream *stream = calloc(sizeof(struct stream) + sizeof(struct rand_stream), 1);
 	if (!stream)
 		return NULL;
-	struct rand_stream *rs = (struct rand_stream *)(stream + 1);
+	struct rand_stream *rs = stream_to_rand(stream);
 	stream->read = rand_read;
 	rs->max_len = max_len;
 	rs->pos = 0;
 	return stream;
 }
+
+struct pipe_stream {
+	int max_size;
+	int used;
+	char buffer[0];
+};
+
+static struct pipe_stream *stream_to_pipe(struct stream *stream)
+{
+	return (struct pipe_stream *)(stream + 1);
+}
+
+static int pipe_read(struct stream *stream, void *result, int max_size)
+{
+	struct pipe_stream *pipe = stream_to_pipe(stream);
+	if (max_size > pipe->used)
+		max_size = pipe->used;
+	memcpy(result, pipe->buffer, max_size);
+	pipe->used -= max_size;
+	memcpy(pipe->buffer, &pipe->buffer[max_size], pipe->used);
+
+	stream_notify(stream);
+
+	return max_size;	
+}
+
+static int pipe_available(struct stream *stream, int *read, int *write)
+{
+	struct pipe_stream *pipe = stream_to_pipe(stream);
+	if (read) *read = pipe->used > 0;
+	if (write) *write = pipe->used < pipe->max_size;
+	return 1;
+}
+
+static int pipe_write(struct stream *stream, const void * const data, const int data_len)
+{
+	struct pipe_stream *pipe = stream_to_pipe(stream);
+	int free_space = pipe->max_size - pipe->used;
+	int read_len;
+	if (data_len > free_space)
+		read_len = free_space;
+	else
+		read_len = data_len;
+
+	memcpy(&pipe->buffer[pipe->used], data, read_len);
+	pipe->used += read_len;
+
+	stream_notify(stream);
+
+	return read_len;
+}
+
+struct stream *stream_pipe_open(int buffer_size)
+{
+	struct stream *stream = calloc(sizeof(struct stream) + sizeof(struct pipe_stream) + buffer_size, 1);
+	if (!stream)
+		return NULL;
+	struct pipe_stream *pipe = stream_to_pipe(stream);
+	pipe->max_size = buffer_size;
+	pipe->used = 0;
+	stream->read = pipe_read;
+	stream->write = pipe_write;
+	stream->available = pipe_available;
+
+	return stream;
+}
+
 
 /*******
  * UTILITY FUNCTIONS
