@@ -7,7 +7,12 @@ jobs:
       - checkout
       - run:
           name: Setup tools
-          command: apk update && apk add gcc make cppcheck
+          command: apk update && apk add gcc make cppcheck libc-dev
       - run:
-          name: Build & test
-          command: make test
+          name: Build
+          command: make streams_test
+      - run:
+          name: Test
+          command: mkdir test-output && ./streams_test --xml-output=test-results/test.xml
+      - store_test_results:
+          path: test-results
