@@ -1,6 +1,8 @@
 CFLAGS=-g -Wall -Wextra -pipe -O3
+SOURCES=streams.c streams.h streams_test.c
 
 default: test
+.PHONY: default
 
 %.o: %.c streams.h
 	cppcheck --quiet $<
@@ -8,9 +10,16 @@ default: test
 
 test: streams_test
 	./streams_test -t --xml-output=results.xml
+.PHONY: test
 
 streams_test: streams.o streams_test.o
 	$(CC) -o $@ streams.o streams_test.o $(LFLAGS)
+
+format:
+	 for s in $(SOURCES) ; do \
+		clang-format $$s | diff -u $$s - ; \
+	done
+.PHONY: format
 
 help:
 	echo "make <target>"
