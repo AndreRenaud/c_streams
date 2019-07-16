@@ -500,10 +500,18 @@ static int process_write(struct stream *stream, const void *const data,
 
 static int process_close(struct stream *stream)
 {
+    int i;
     struct process_stream *process = stream_to_process(stream);
     kill(process->pid, SIGTERM);
-    sleep(2);
-    kill(process->pid, SIGKILL);
+    // Loop for 1s waiting for the process to die
+    for (i = 0; i < 10; i++) {
+        if (kill(process->pid, 0) < 0)
+            break;
+        usleep(100 * 1000);
+    }
+    // It didn't die nicely, so just hard kill it
+    if (i == 10)
+        kill(process->pid, SIGKILL);
     waitpid(process->pid, NULL, 0);
     close(process->fd);
     return 0;
