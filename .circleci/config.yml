@@ -13,6 +13,6 @@ jobs:
           command: make streams_test
       - run:
           name: Test
-          command: mkdir -p test-results/streams && ./streams_test --xml-output=test-results/streams/test.xml
+          command: mkdir -p test-results/streams && ./streams_test -t --xml-output=test-results/streams/test.xml
       - store_test_results:
           path: test-results
