@@ -7,7 +7,7 @@ default: test
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 test: streams_test
-	./streams_test
+	./streams_test -t --xml-output=results.xml
 
 streams_test: streams.o streams_test.o
 	$(CC) -o $@ streams.o streams_test.o $(LFLAGS)
