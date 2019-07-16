@@ -1,9 +1,9 @@
 #ifndef STREAMS_H
 #define STREAMS_H
 
+#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <pthread.h>
 
 struct stream;
 
@@ -14,14 +14,15 @@ struct stream;
  * @return NULL on failure, stream handle on success
  */
 struct stream *stream_file_open(const char *file_name, const char *mode);
-struct stream *stream_mem_open(void *memory_area, size_t memory_len, const char *mode);
+struct stream *stream_mem_open(void *memory_area, size_t memory_len,
+                               const char *mode);
 struct stream *stream_url_open(const char *url, const char *mode);
 struct stream *stream_rand_open(int max_len);
 
 /**
  * Open a command and read/write from it
  */
-struct stream *stream_process_open(char * const * args);
+struct stream *stream_process_open(char *const *args);
 
 /**
  * Open a read/write tcp stream connection to a host:port
@@ -40,10 +41,13 @@ struct stream *stream_line_open(struct stream *input);
 
 /**
  * Sets a callback function + userdata to be called whenever this stream
- * has data availe for either read or write (use stream_available to check which) 
+ * has data availe for either read or write (use stream_available to check
+ * which)
  * TODO: Distinguish between read/write availability?
  */
-int stream_set_notify(struct stream *stream, void (*)(void *data, struct stream *stream), void *data);
+int stream_set_notify(struct stream *stream,
+                      void (*)(void *data, struct stream *stream),
+                      void *data);
 
 /**
  * read callback will read up to max_size bytes into the 'result' buffer
@@ -55,7 +59,8 @@ int stream_read(struct stream *stream, void *result, const int max_size);
  * write data up to 'data_len' bytes from the 'data' pointer.
  * @return < 0 on failure, number of bytes written to result on success
  */
-int stream_write(struct stream *stream, const void * const data, const int data_len);
+int stream_write(struct stream *stream, const void *const data,
+                 const int data_len);
 
 /**
  * Close the metadata associated with thes streaming functions
