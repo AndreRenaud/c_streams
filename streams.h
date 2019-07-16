@@ -24,6 +24,11 @@ struct stream *stream_rand_open(int max_len);
 struct stream *stream_pipe_open(int buffer_size);
 
 /**
+ * Convert a byte-wise reader into a line-wise one
+ */
+struct stream *stream_line_open(struct stream *input);
+
+/**
  * Sets a callback function + userdata to be called whenever this stream
  * has data availe for either read or write (use stream_available to check which) 
  * TODO: Distinguish between read/write availability?

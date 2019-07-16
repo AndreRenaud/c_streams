@@ -17,7 +17,6 @@ struct stream {
 	void *notify_data;
 };
 
-
 int stream_set_notify(struct stream *stream, void (*notify)(void *data, struct stream *stream), void *data)
 {
 	stream->notify = notify;
@@ -29,6 +28,13 @@ static inline void stream_notify(struct stream *stream)
 {
 	if (stream->notify)
 		stream->notify(stream->notify_data, stream);
+}
+
+static void stream_chain_notify(void *data, struct stream *parent)
+{
+	(void)parent;
+	struct stream *child = data;
+	stream_notify(child);
 }
 
 int stream_read(struct stream *stream, void *result, const int max_size)
@@ -274,7 +280,7 @@ static int pipe_read(struct stream *stream, void *result, int max_size)
 
 	stream_notify(stream);
 
-	return max_size;	
+	return max_size;
 }
 
 static int pipe_available(struct stream *stream, int *read, int *write)
@@ -318,6 +324,98 @@ struct stream *stream_pipe_open(int buffer_size)
 	return stream;
 }
 
+struct line_stream {
+	struct stream *parent;
+	int pos;
+	char buffer[1024];
+	int break_pos;
+};
+
+static struct line_stream *stream_to_line(struct stream *stream)
+{
+	return (struct line_stream *)(stream + 1);
+}
+
+static int line_read(struct stream *stream, void *result, int max_size)
+{
+	struct line_stream *line = stream_to_line(stream);
+
+	/* If we don't have a line break, then read more data */
+	if (line->break_pos == -1) {
+		int e = stream_read(line->parent, &line->buffer[line->pos], sizeof(line->buffer) - line->pos);
+		if (e < 0)
+			return e;
+		line->pos += e;
+
+		for (int i = 0; i < line->pos; i++) {
+			if (line->buffer[i] == '\n') {
+				line->break_pos = i;
+				break;
+			}
+		}
+	}
+
+	if (line->break_pos >= 0) {
+		int line_len = line->break_pos;
+		uint8_t *r8 = result;
+		if (line_len > max_size - 1)
+			line_len = max_size - 1;
+		memcpy(result, line->buffer, line_len);
+		r8[line_len] = '\0';
+		memcpy(line->buffer, &line->buffer[line->break_pos + 1], line->pos - line->break_pos - 1);
+		line->break_pos = -1;
+
+		for (int i = 0; i < line->pos; i++) {
+			if (line->buffer[i] == '\n') {
+				line->break_pos = i;
+				break;
+			}
+		}
+
+		printf("Line break pos moved on to %d pos=%d\n", line->break_pos, line->pos);
+	}
+
+
+	stream_notify(stream);
+
+	return max_size;
+}
+
+static int line_available(struct stream *stream, int *read, int *write)
+{
+	struct line_stream *line = stream_to_line(stream);
+	if (read) *read = line->break_pos != -1;
+	if (write) *write = 0;
+	return stream_available(line->parent, NULL, NULL);
+}
+
+static int line_close(struct stream *stream)
+{
+	struct line_stream *line = stream_to_line(stream);
+	stream_set_notify(line->parent, NULL, NULL);
+	return 0;
+}
+
+struct stream *stream_line_open(struct stream *input)
+{
+	if (!input->read)
+		return NULL;
+	struct stream *stream = calloc(sizeof(struct stream) + sizeof(struct line_stream), 1);
+	if (!stream)
+		return NULL;
+	struct line_stream *line = stream_to_line(stream);
+
+	line->parent = input;
+	line->pos = 0;
+	line->break_pos = -1;
+	stream->read = line_read;
+	stream->available = line_available;
+	stream->close = line_close;
+
+	stream_set_notify(line->parent, stream_chain_notify, stream);
+
+	return stream;
+}
 
 /*******
  * UTILITY FUNCTIONS

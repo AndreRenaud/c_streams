@@ -118,9 +118,36 @@ void test_condition(void)
 	TEST_CHECK(stream_close(l.stream) >= 0);
 }
 
+void test_line_reader(void)
+{
+	char input_data[] = "line 1\n"
+						"line 2\n";
+	char buffer[1024];
+	struct stream *input;
+	struct stream *line;
+
+	input = stream_mem_open(input_data, sizeof(input_data), "r");
+	TEST_CHECK(input != NULL);
+
+	line = stream_line_open(input);
+	TEST_CHECK(line != NULL);
+
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) >= 0);
+	printf("Got first line '%s'\n", buffer);
+	TEST_CHECK(strcmp(buffer, "line 1") == 0);
+	TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) >= 0);
+	printf("Got second line '%s'\n", buffer);
+	TEST_CHECK(strcmp(buffer, "line 2") == 0);
+
+	TEST_CHECK(stream_available(line, NULL, NULL) == 0);
+	stream_close(line);
+	stream_close(input);
+}
+
 TEST_LIST = {
     {"mem", test_mem},
     {"file", test_file},
     {"condition", test_condition},
+    {"line", test_line_reader},
     { NULL, NULL }
 };
