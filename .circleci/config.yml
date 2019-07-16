@@ -7,12 +7,14 @@ jobs:
       - checkout
       - run:
           name: Setup tools
-          command: apk update && apk add --no-progress gcc make cppcheck libc-dev ca-certificates
+          command: apk update && apk add --no-progress gcc make cppcheck libc-dev ca-certificates valgrind
       - run:
           name: Build
           command: make streams_test
       - run:
           name: Test
-          command: mkdir -p test-results/streams && ./streams_test -t --xml-output=test-results/streams/test.xml
+          command: |
+              mkdir -p test-results/streams
+              valgrind --leak-check=full --error-exitcode=1 ./streams_test -t --xml-output=test-results/streams/test.xml
       - store_test_results:
           path: test-results
