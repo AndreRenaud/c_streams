@@ -3,8 +3,15 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <unistd.h>
 #include <stdarg.h>
 #include <sys/select.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
+#include <arpa/inet.h>
 
 #include "streams.h"
 
@@ -163,7 +170,7 @@ static inline FILE *stream_to_file(struct stream *stream)
 	return *(FILE **)(stream + 1);
 }
 
-static inline void check_cond_fd(struct stream *stream, int fd)
+static inline void check_notify_fd(struct stream *stream, int fd)
 {
 	if (!stream->notify)
 		return;
@@ -184,7 +191,7 @@ static int file_read(struct stream *stream, void *result, const int max_size)
 	int e = fread(result, 1, max_size, fp);
 	if (e < 0)
 		return -errno;
-	check_cond_fd(stream, fileno(fp));
+	check_notify_fd(stream, fileno(fp));
 	return e;
 }
 
@@ -195,7 +202,7 @@ static int file_write(struct stream *stream, const void * const data, const int 
 	if (e < 0)
 		return -errno;
 
-	check_cond_fd(stream, fileno(fp));
+	check_notify_fd(stream, fileno(fp));
 	return e;
 }
 
@@ -462,6 +469,100 @@ struct stream *stream_process_open(const char *command, ...)
 	stream->read = file_read;
 	stream->close = process_close;
 	stream->available = NULL;
+	return stream;
+}
+
+struct tcp_stream {
+	int fd;
+};
+
+struct tcp_stream *stream_to_tcp(struct stream *stream)
+{
+	return (struct tcp_stream *)(stream + 1);
+}
+
+static int tcp_read(struct stream *stream, void *result, int max_size)
+{
+	struct tcp_stream *tcp = stream_to_tcp(stream);
+
+	int n = recv(tcp->fd, result, max_size, 0);
+	if (n < 0)
+		return -errno;
+
+	check_notify_fd(stream, tcp->fd);
+
+	return n;
+}
+
+static int tcp_available(struct stream *stream, int *read, int *write)
+{
+	(void)stream;
+	// TODO: Actually detect if we can read/write
+	if (read) *read = 1;
+	if (write) *write = 1;
+	return 1;
+}
+
+static int tcp_write(struct stream *stream, const void * const data, const int data_len)
+{
+	struct tcp_stream *tcp = stream_to_tcp(stream);
+
+	int n = send(tcp->fd, data, data_len, 0);
+	if (n < 0)
+		return -errno;
+	check_notify_fd(stream, tcp->fd);
+	return n;
+}
+
+static int tcp_close(struct stream *stream)
+{
+	struct tcp_stream *tcp = stream_to_tcp(stream);
+	if (close(tcp->fd) < 0)
+		return -errno;
+	return 0;
+}
+
+struct stream *stream_tcp_open(const char *host, int port)
+{
+	int sockfd;
+	struct hostent *he;
+	struct sockaddr_in addr = {};
+	int enable = 1;
+
+	he = gethostbyname(host);
+	if (!he) {
+		perror("gethostbyname");
+		return NULL;
+	}
+
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		perror("socket");
+		return NULL;
+	}
+
+	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+		perror("SO_REUSEADDR");
+
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr = *((struct in_addr *)he->h_addr);
+
+	if (connect(sockfd, (struct sockaddr *)&addr, sizeof(struct sockaddr)) == -1) {
+		perror("connect");
+		close(sockfd);
+		return NULL;
+	}
+
+	struct stream *stream = calloc(sizeof(struct stream) + sizeof(struct tcp_stream), 1);
+	struct tcp_stream *tcp = stream_to_tcp(stream);
+	tcp->fd = sockfd;
+
+	stream->read = tcp_read;
+	stream->write = tcp_write;
+	stream->available = tcp_available;
+	stream->close = tcp_close;
+
 	return stream;
 }
 

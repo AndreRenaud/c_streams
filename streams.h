@@ -24,6 +24,11 @@ struct stream *stream_rand_open(int max_len);
 struct stream *stream_process_open(const char *command, ...);
 
 /**
+ * Open a read/write tcp stream connection to a host:port
+ */
+struct stream *stream_tcp_open(const char *host, int port);
+
+/**
  * Create a stream which sends data from writes out to reads
  */
 struct stream *stream_pipe_open(int buffer_size);

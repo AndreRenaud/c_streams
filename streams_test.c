@@ -174,11 +174,33 @@ void test_process(void)
 	stream_close(p);
 }
 
+void test_tcp(void)
+{
+	struct stream *tcp;
+	char buffer[1024];
+
+	system("yes | nohup nc -l 13370 &");
+	sleep(1);
+
+	tcp = stream_tcp_open("localhost", 13370);
+	TEST_CHECK(tcp != NULL);
+	struct stream *line = stream_line_open(tcp);
+
+	for (int i = 0; i < 100; i++) {
+		TEST_CHECK(stream_read(line, buffer, sizeof(buffer)) == 1);
+		TEST_CHECK(strcmp(buffer, "y") == 0);
+	}
+	stream_close(line);
+	stream_close(tcp);
+
+}
+
 TEST_LIST = {
     {"mem", test_mem},
     {"file", test_file},
     {"condition", test_condition},
     {"line", test_line_reader},
     {"process", test_process},
+    {"tcp", test_tcp},
     { NULL, NULL }
 };
