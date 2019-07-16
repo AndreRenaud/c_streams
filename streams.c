@@ -2,7 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifdef __APPLE__
 #include <util.h>
+#else
+#include <pty.h>
+#endif
 #include <stdbool.h>
 #include <signal.h>
 #include <unistd.h>
