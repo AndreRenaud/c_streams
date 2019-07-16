@@ -7,7 +7,7 @@ jobs:
       - checkout
       - run:
           name: Setup tools
-          command: apk update && apk add --no-progress gcc make cppcheck libc-dev
+          command: apk update && apk add --no-progress gcc make cppcheck libc-dev ca-certificates
       - run:
           name: Build
           command: make streams_test
